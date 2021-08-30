@@ -19,3 +19,5 @@ var (
 		commandLimit: 4,
 		circleTarget: true,
 		hitSize: 7,
+	}
+)
