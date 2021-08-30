@@ -40,6 +40,88 @@ type Message interface {
 	PrintFlush(buffer string)
 }
 
+type UnitType struct {
+	/** If true, the unit is always at elevation 1. */
+	name                  string
+	flying                bool
+	targetAir             bool
+	targetGround          bool
+	faceTarget            bool
+	rotateShooting        bool
+	isCounted             bool
+	lowAltitude           bool
+	circleTarget          bool
+	canBoost              bool
+	destructibleWreck     bool
+	hovering              bool
+	omniMovement          bool
+	allowLegStep          bool
+	canDrown              bool
+	speed                 float64
+	boostMultiplier       float64
+	rotateSpeed           float64
+	baseRotateSpeed       float64
+	drag                  float64
+	accel                 float64
+	landShake             float64
+	rippleScale           float64
+	riseSpeed             float64
+	fallSpeed             float64
+	health                float64
+	urange                float64
+	miningRange           float64
+	armor                 float64
+	maxRange              float64
+	crashDamageMultiplier float64
+	aimDst                float64
+	commandRadius         float64
+	buildSpeed            float64
+	mineSpeed             float64
+	strafePenalty         float64
+	hitSize               float64
+	commandLimit          int
+	payloadCapacity       int
+	itemCapacity          int
+	ammoCapacity          int
+	clipSize              int
+	ammoType              int
+	mineTier              int
+	//abilities = []interface{};
+	weapons []interface{} //TODO make actual weapon type
+}
+
+type Unit struct {
+	utype      *UnitType
+	formation  []Unit // what you are commanding
+	controller interface{}
+	payloads   []interface{}
+
+	hovering      bool
+	dead          bool
+	disarmed      bool
+	spawnedByCore bool // despawn if no player
+
+	x                 float64 // tiles, not """block units"""
+	y                 float64
+	rotation          float64
+	elevation         float64
+	maxHealth         float64
+	drag              float64 // how much we divide speed in a frame
+	armor             float64 // how much damage is reduced from each bullet
+	hitSize           float64
+	health            float64
+	ammo              float64
+	minFormationSpeed float64
+	dragMultiplier    float64
+	velX              float64
+	velY              float64
+
+	team  int
+	id    int
+	mineX int // TODO: replace with Tile?
+	mineY int
+}
+
 type DrawAction string
 
 const (
