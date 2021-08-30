@@ -1,8 +1,8 @@
 package runtime
 
 import (
+	"math"
 	"reflect"
-	"runtime/types"
 )
 
 func NewUnitType() UnitType {
@@ -56,16 +56,41 @@ func NewUnitType() UnitType {
 	}
 }
 
+func NewUnit() Unit {
+	return Unit{
+		speedMultiplier: 1,
+		hitSize:         6,
+	}
+}
+
 func (this Unit) moveAt(vector Vec2) {
-	moveAt(this, vector, this.utype.accel)
+	this.moveAtA(vector, this.utype.accel) // imported from *where?*
+}
+func (this Unit) moveAtA(vector Vec2, acceleration float64) {
+	switch this.elevation > 0 {
+	case true:
+		t := Vec2{}.set(vector.x, vector.y)                                                                 //target vector
+		t.sub(this.vel).limit(acceleration * vector.len1() /* * Time.delta*/ * this.floorSpeedMultiplier()) //delta vector
+		this.vel.add(t)
+	case false:
+		//mark walking state when moving in a controlled manner
+		if !vector.isZero() {
+			this.walked = true
+		}
+	}
+}
+func (this Unit) floorSpeedMultiplier() float64 {
+	/*Floor on = isFlying() || hovering ? Blocks.air.asFloor() : floorOn();
+	return on.speedMultiplier * speedMultiplier;*/
+	return this.speedMultiplier
 }
 
 func (this Unit) approach(vector Vec2) {
-	vel.approachDelta(vector, this.utype.accel*this.realSpeed())
+	this.vel.approachDelta(vector, this.utype.accel*this.realSpeed())
 }
 
 func (this Unit) rotateMove(vec Vec2) {
-	moveAt(vec2.trns(this.rotation, vec.len1()))
+	this.moveAt(Vec2{}.trns(this.rotation, vec.len1()))
 
 	if !vec.isZero() {
 		this.rotation = moveToward(this.rotation, vec.angle(), this.utype.rotateSpeed /* * math.Max(Time.delta, 1)*/)
@@ -73,14 +98,14 @@ func (this Unit) rotateMove(vec Vec2) {
 }
 
 func (this Unit) aimLook(pos Vec2) {
-	this.aim(pos)
-	this.lookAt(pos)
+	//this.aim(pos)
+	this.lookAtPos(pos.x, pos.y)
 }
 
-func (this Unit) aimLook(float x, float y) {
-	aim(x, y)
-	lookAt(x, y)
-}
+/*func (this Unit) aimLook(x, y float64) {
+	this.aim(x, y)
+	this.lookAt(x, y)
+}*/
 
 /** @return approx. square size of the physical hitbox for physics */
 func (this Unit) physicSize() float64 {
@@ -96,7 +121,7 @@ func (this Unit) canLand() bool {
 	xright := this.x + this.physicSize()/2
 	ydown := this.y - this.physicSize()/2
 	yup := this.y + this.physicSize()/2
-	for _, unit := range Groups.unit {
+	for _, unit := range Groups.unit { // replace with your own unit attachment
 		if unit == this || !unit.isGrounded() {
 			continue
 		}
@@ -112,58 +137,84 @@ func (this Unit) canLand() bool {
 	return true
 }
 
+func (this Unit) onSolid() bool {
+	return false
+}
+
 func (this Unit) inRange(other Vec2) bool {
-	return this.within(other, this.this.utype.urange)
+	return other.len1() < this.utype.urange
+	//return this.within(other, this.utype.urange) // declared where?
 }
 
 func (this Unit) hasWeapons() bool {
-	return this.utype.hasWeapons()
+	return len(this.utype.weapons) > 0
 }
-
+func (this Unit) isGrounded() bool {
+	return this.elevation < 0.001
+}
 func (this Unit) speed() float64 {
-	a := this.vel().angle()
-	strafePenalty = math.Min((this.isGrounded() || !this.isPlayer()).(float64), 1+(this.utype.strafePenalty-1)*math.Min(math.Mod(a-this.rotation+360), math.Mod(this.rotation-a+360, 360))/180) // Angles.angleDist
+	a := this.vel.angle()
+	b := 0.0
+	if this.isGrounded() || !this.isPlayer() {
+		b = 1
+	}
+	this.strafePenalty = math.Min(b, 1+(this.utype.strafePenalty-1)*math.Min(math.Mod(a-this.rotation+360, 360), math.Mod(this.rotation-a+360, 360))/180) // Angles.angleDist
 	//limit speed to minimum formation speed to preserve formation
+	ns := this.utype.speed
 	if this.isCommanding() {
-		ns := this.minFormationSpeed * 0.98
-	} else {
-		ns := this.utype.speed
+		ns = this.minFormationSpeed * 0.98
 	}
 	return ns * this.strafePenalty
 }
 
+func (this Unit) isCommanding() bool {
+	for _, unit := range this.formation {
+		if !unit.dead {
+			return true
+		}
+	}
+	return false
+}
+
 /** @return speed with boost multipliers factored in. */
 func (this Unit) realSpeed() float64 {
+	b := 1.0
 	if this.utype.canBoost {
-		b := this.utype.boostMultiplier
-	} else {
-		b := 1
+		b = this.utype.boostMultiplier
 	}
-	return (1 + (b-1)*elevation) * this.speed() * this.floorSpeedMultiplier()
+	return (1 + (b-1)*this.elevation) * this.speed() * this.floorSpeedMultiplier()
 }
 
 /** Iterates through this unit and everything it is controlling. */
 // BROKEN, TODO fix
 /*func (this Unit) eachGroup(cons interface{}){ // originally an arc.func.Cons
-	for _, unit in formation {
+	for _, unit := range formation {
 		cons(unit);
 	}
 }*/
 
+func (this Unit) angleTo(x, y float64) float64 {
+	return Vec2{x - this.x, y - this.y}.angle()
+}
+
 /** @return where the unit wants to look at. */
-func (this Unit) prefRotation() {
+func (this Unit) prefRotation() float64 {
 	if this.isBuilding() {
-		return angleTo(this.buildX, this.buildY)
-	} else if this.mineX != nil && this.mineY != nil {
-		return angleTo(this.mineX, this.mineY)
-	} else if this.moving() && this.utype.omniMovement {
-		return this.vel().angle()
+		return this.angleTo(float64(this.buildX), float64(this.buildY))
+	} else if this.mining != false {
+		return this.angleTo(float64(this.mineX), float64(this.mineY))
+	} else if this.vel.len1() > 0 && this.utype.omniMovement {
+		return this.vel.angle()
 	}
 	return this.rotation
 }
 
-func (this Unit) urange() {
+func (this Unit) urange() float64 {
 	return this.utype.maxRange
+}
+
+func (this Unit) isBuilding() bool {
+	return false // no ucontrol build yet
 }
 
 /*
@@ -178,115 +229,156 @@ func (this Unit) clipSize(){ // ???
 }*/
 
 func (this Unit) sense(sensor string) float64 {
-	switch(sensor){
-		case "totalItems": return this.stack().amount;
-		case "itemCapacity": return this.utype.itemCapacity;
-		case "rotation": return this.rotation;
-		case "health": return this.health;
-		case "maxHealth": return this.maxHealth;
-		case "ammo": return math.Max(world.rules.unitAmmo.(float64) * this.utype.ammoCapacity, this.ammo);
-		case "ammoCapacity": return this.utype.ammoCapacity;
-		case "x": return this.x;
-		case "y": return this.y;
-		case "dead": return this.dead.(float64);
-		case "team": return this.team;
-		case "shooting": return this.shooting.(float64);
-		case "boosting": return (this.utype.canBoost && this.elevation > 0).(float64);
-		case "range": this.urange();
-		case "shootX": this.shootX;
-		case "shootY": this.shootY;
-		case "mining": this.mining.(float64);
-		case "mineX": math.Max(this.mining.(float64) * this.mineX + 1, 0) - 1;
-		case "mineY": math.Max(this.mining.(float64) * this.mineY + 1, 0) - 1;
-		case "flag": this.flag;
-		case "controlled": return getControllerType()
-		case "commanded": 
-			if casted, ok := this.controller.(Unit); ok && !this.dead {
-				return true
-			} else {
-				return false // remove once v7 comes out
-			}
-		case "payloadCount": return len(payloads)
-		case "size": return hitSize
-		default: return NaN;
-	};
+	switch sensor {
+	case "totalItems":
+		return float64(this.stack.amount)
+	case "itemCapacity":
+		return float64(this.utype.itemCapacity)
+	case "rotation":
+		return this.rotation
+	case "health":
+		return this.health
+	case "maxHealth":
+		return this.maxHealth
+	case "ammo":
+		if world.rules.unitAmmo {
+			return this.ammo
+		}
+		return float64(this.utype.ammoCapacity)
+	case "ammoCapacity":
+		return float64(this.utype.ammoCapacity)
+	case "x":
+		return this.x
+	case "y":
+		return this.y
+	case "dead":
+		if this.dead {
+			return 1.0
+		}
+		return 0.0
+	case "team":
+		return float64(this.team) // Team struct?
+	case "shooting":
+		if this.shooting {
+			return 1.0
+		}
+		return 0.0
+	case "boosting":
+		if this.utype.canBoost && this.elevation > 0 {
+			return 1.0
+		}
+		return 0.0
+	case "range":
+		return this.urange()
+	case "shootX":
+		return this.shootX
+	case "shootY":
+		return this.shootY
+	case "mining":
+		if this.mining {
+			return 1.0
+		}
+		return 0.0
+	case "mineX":
+		if this.mining {
+			return float64(this.mineX)
+		}
+		return -1
+	case "mineY":
+		if this.mining {
+			return float64(this.mineY)
+		}
+		return -1
+	case "flag":
+		return this.flag
+	case "controlled":
+		return float64(this.getControllerType())
+	case "commanded":
+		if this.controller.ctype == 3 && !this.dead {
+			return 1.0
+		}
+		return 0.0
+	case "payloadCount":
+		return float64(len(this.payloads))
+	case "size":
+		return this.hitSize
+	default:
+		return math.NaN()
+	}
 }
 
 func (this Unit) senseObject(sensor string) interface{} {
-	switch(sensor){
-		case "type": return this.utype;
-		case "name": return this.getControllerName();
-		case "firstItem": return nil; //stack().amount == 0 ? null : item();
-		case "controller": return this.getController();
-		case "payloadType": return reflect.TypeOf(payloads[len(payloads)-1])
-		default: return nil;
-	};
+	switch sensor {
+	case "type":
+		return this.utype
+	case "name":
+		return this.getControllerName()
+	case "firstItem":
+		return nil //stack().amount == 0 ? null : item();
+	case "controller":
+		return this.getController()
+	case "payloadType":
+		return reflect.TypeOf(this.payloads[len(this.payloads)-1])
+	default:
+		return nil
+	}
 }
+
 /*
 func (this Unit) sense(Content content){ // TODO items
 	if(content == stack().item) return stack().amount;
 	return Float.NaN;
 }*/
 
-func (this Unit) canDrown() {
+func (this Unit) canDrown() bool {
 	return this.isGrounded() && !this.hovering && this.utype.canDrown
 }
 
-func (this Unit) canShoot() {
+func (this Unit) canShoot() bool {
 	//cannot shoot while boosting
 	return !this.disarmed && !(this.utype.canBoost && this.elevation > 0)
 }
 
-func (this Unit) isCounted() {
+func (this Unit) isCounted() bool {
 	return this.utype.isCounted
 }
 
-func (this Unit) bounds() {
+func (this Unit) bounds() float64 {
 	return this.hitSize * 2
 }
 
-func (this Unit) controller(next interface{}) {
-	if controller != this {
-		this.controller = next
-	} else {
-		this.controller = nil
-	}
-}
-
 func (this Unit) getController() interface{} {
-	if casted, ok := this.controller.(ExecutionContext); ok {
-		return casted
-	} else if casted, ok := this.controller.(Player); ok {
-		return casted
-	} else if casted, ok := this.controller.(Unit); ok {
-		return casted
-	}
-	return nil
+	return this.controller.parent
 }
 
-func (this Unit) getControllerType() float64 {
+func (this Unit) getControllerType() int {
 	if this.dead {
 		return 0
 	}
-	if casted, ok := this.controller.(ExecutionContext); ok {
-		return 1
-	} else if casted, ok := this.controller.(Player); ok {
-		return 2
-	} else if casted, ok := this.controller.(Unit); ok {
-		return 3
-	}
-	return 0
+	return this.controller.ctype
+	/*
+		if casted, ok := this.controller.(ExecutionContext); ok {
+			casted = casted
+			return 1
+		} else if casted, ok := this.controller.(Player); ok {
+			casted = casted
+			return 2
+		} else if casted, ok := this.controller.(Unit); ok {
+			casted = casted
+			return 3
+		}
+		return 0*/
 }
 
 func (this Unit) resetController() {
-	this.controller = null
+	this.controller = nil
 }
 
-func (this Unit) set(def UnitType, controller interface{}) {
-	if this.utype != def {
-		setType(def)
+func (this Unit) set(def UnitType, controller UnitController) {
+	if this.utype != &def {
+		this.setType(def)
 	}
-	this.controller = controller
+	this.controller = &controller
 }
 
 /** @return pathfinder path type for calculating costs */
@@ -294,22 +386,16 @@ func (this Unit) set(def UnitType, controller interface{}) {
 	return Pathfinder.costGround;
 }*/
 
-func (this Unit) lookAt(float angle) {
-	rotation = moveToward(rotation, angle, this.utype.rotateSpeed*Time.delta*speedMultiplier())
+func (this Unit) lookAt(angle float64) {
+	this.rotation = moveToward(this.rotation, angle, this.utype.rotateSpeed* /*Time.delta**/ this.speedMultiplier)
 }
 
-func (this Unit) lookAt(Position pos) {
-	lookAt(angleTo(pos))
+func (this Unit) lookAtPos(x, y float64) {
+	this.lookAt(this.angleTo(x, y))
 }
 
-func (this Unit) lookAt(float x, float y) {
-	lookAt(angleTo(x, y))
-}
-
-func (this Unit) isAI() boolean {
-	if casted, ok := this.controller.(ExecutionContext); ok {
-		return true
-	} else if casted, ok := this.controller.(Unit); ok {
+func (this Unit) isAI() bool {
+	if this.controller.ctype == 1 || this.controller.ctype == 3 {
 		return true
 	}
 	return false
@@ -325,7 +411,7 @@ public int cap(){
 }*/
 
 func (this Unit) setType(ntype UnitType) {
-	this.utype = ntype
+	this.utype = &ntype
 	this.maxHealth = ntype.health
 	this.drag = ntype.drag
 	this.armor = ntype.armor
@@ -400,15 +486,16 @@ func (this Unit) advanceTick() {
 		team.data().updateCount(type, -1);
 	}*/
 
-	if world.rules.unitAmmo && this.ammo < this.utype.ammoCapacity-0.0001 {
-		resupplyTime += 1 /*Time.delta*/
-
-		//resupply only at a fixed interval to prevent lag
-		if resupplyTime > 10 {
-			utype.ammoType.resupply(self())
-			resupplyTime = 0
-		}
-	}
+	//
+	//if world.rules.unitAmmo && this.ammo < (float64(this.utype.ammoCapacity)-0.0001) {
+	//	this.resupplyTime += 1 /*Time.delta*/
+	//
+	//	//resupply only at a fixed interval to prevent lag
+	//	if this.resupplyTime > 10 {
+	//		this.utype.ammoType.resupply(self())
+	//		this.resupplyTime = 0
+	//	}
+	//}
 
 	/*if(abilities.size > 0){
 		for(Ability a : abilities){
@@ -416,7 +503,11 @@ func (this Unit) advanceTick() {
 		}
 	}*/
 
-	this.drag = utype.drag * (math.Min(this.isGrounded()*this.floorOn().dragMultiplier, 1)) * this.dragMultiplier
+	g := 0.0
+	if this.isGrounded() {
+		g = 1
+	}
+	this.drag = this.utype.drag * (math.Min(g /**this.floorOn().dragMultiplier*/, 1)) * this.dragMultiplier
 
 	//apply knockback based on spawns
 	/*
@@ -453,7 +544,7 @@ func (this Unit) advanceTick() {
 			}*/
 
 		//move down
-		elevation -= utype.fallSpeed /* * Time.delta*/
+		this.elevation -= this.utype.fallSpeed /* * Time.delta*/
 
 		/*if(this.isGrounded() || this.health <= -this.maxHealth){
 			despawn();
@@ -501,10 +592,10 @@ func (this Unit) advanceTick() {
 			despawn(this);
 		}*/
 	// do physics
-	x += velX
-	y += velY
-	velX /= drag
-	velY /= drag
+	this.x += this.vel.x
+	this.y += this.vel.y
+	this.vel.x /= (1 + this.drag)
+	this.vel.y /= (1 + this.drag)
 }
 
 /** @return a preview icon for this unit. */
@@ -559,15 +650,7 @@ public void destroy(){
 
 /** @return name of direct or indirect player controller. */
 func (this Unit) getControllerName() string {
-	switch this.getControllerType() {
-	case 1:
-		return controller.author //lastAccessed
-	case 2:
-		return controller.name
-	case 3:
-		return controller.controller.name
-	}
-	return nil
+	return this.controller.name
 }
 
 /*@Override
@@ -576,7 +659,8 @@ func (this Unit) display(Table table){
 }*/
 
 func (this Unit) isImmune(effect string) bool {
-	return utype.immunities.contains(effect)
+	return false
+	//return this.utype.immunities.contains(effect)
 }
 
 /*
@@ -586,25 +670,25 @@ public void draw(){
 }*/
 
 func (this Unit) isPlayer() bool {
-	return this.getControllerType == 2
+	return this.controller.ctype == 2
 }
 
-func (this Unit) getPlayer() bool {
+func (this Unit) getPlayer() interface{} {
 	if this.isPlayer() {
-		return controller
+		return this.controller.parent
 	} else {
 		return nil
 	}
 }
 
 func (this Unit) killed() {
-	wasPlayer := getController()
-	health := Math.min(health, 0)
-	dead := true
+	//this.wasPlayer = this.getController()
+	this.health = math.Min(this.health, 0)
+	this.dead = true
 
 	//don't waste time when the unit is already on the ground, just destroy it
 	if !this.utype.flying {
-		destroy()
+		//despawn()
 	}
 }
 
@@ -618,13 +702,13 @@ func (this Unit) kill() {
 }
 
 func moveToward(angle, to, speed float64) float64 {
-	if math.Abs(angleDist(angle, to)) < speed {
+	if math.Abs(math.Min(math.Mod(angle-to+360, 360), math.Mod(to-angle+360, 360))) < speed {
 		return to
 	}
 	angle = math.Mod(angle, 360)
 	to = math.Mod(to, 360)
 
-	if angle > to == (360 - math.Abs(angle-to)) > math.Abs(angle-to) {
+	if (angle > to) == ((360 - math.Abs(angle-to)) > math.Abs(angle-to)) {
 		angle -= speed
 	} else {
 		angle += speed

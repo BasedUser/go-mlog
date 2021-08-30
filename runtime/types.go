@@ -40,6 +40,12 @@ type Message interface {
 	PrintFlush(buffer string)
 }
 
+type UnitController struct {
+	parent interface{}
+	name   string
+	ctype  int
+}
+
 type UnitType struct {
 	/** If true, the unit is always at elevation 1. */
 	name                  string
@@ -90,16 +96,34 @@ type UnitType struct {
 	weapons []interface{} //TODO make actual weapon type
 }
 
+type ItemStack struct {
+	item   int
+	amount int
+}
+
+type Player struct {
+	name   string
+	unit   *Unit
+	mouseX float64 // tiles
+	mouseY float64
+}
+
 type Unit struct {
 	utype      *UnitType
 	formation  []Unit // what you are commanding
-	controller interface{}
+	controller *UnitController
 	payloads   []interface{}
+	vel        Vec2
+	stack      ItemStack
 
 	hovering      bool
 	dead          bool
 	disarmed      bool
 	spawnedByCore bool // despawn if no player
+	walked        bool
+	mining        bool
+	shooting      bool
+	building      bool
 
 	x                 float64 // tiles, not """block units"""
 	y                 float64
@@ -112,14 +136,21 @@ type Unit struct {
 	health            float64
 	ammo              float64
 	minFormationSpeed float64
+	flag              float64
 	dragMultiplier    float64
-	velX              float64
-	velY              float64
+	strafePenalty     float64
+	speedMultiplier   float64
+	shootX            float64
+	shootY            float64
+	resupplyTime      float64
 
 	team  int
 	id    int
 	mineX int // TODO: replace with Tile?
 	mineY int
+
+	buildX int
+	buildY int
 }
 
 type DrawAction string
